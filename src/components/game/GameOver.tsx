@@ -13,6 +13,7 @@ interface GameOverProps {
     maxCombo: number;
     mode: GameMode;
     highScore: number;
+    playerName: string; // Added this
     onRestart: () => void;
     onExit: () => void;
     onSaveScore: (name: string) => void;
@@ -26,11 +27,12 @@ export default function GameOver({
     maxCombo,
     mode,
     highScore,
+    playerName: initialPlayerName, // Renamed to avoid collision
     onRestart,
     onExit,
     onSaveScore,
 }: GameOverProps) {
-    const [playerName, setPlayerName] = useState('');
+    const [playerName, setPlayerName] = useState(initialPlayerName);
     const [saved, setSaved] = useState(false);
     const isNewHighScore = score > highScore;
     const accuracy = questionsAnswered > 0 ? Math.round((correctAnswers / questionsAnswered) * 100) : 0;

@@ -27,10 +27,11 @@ import {
 
 interface GameShellProps {
     mode: GameMode;
+    playerName: string;
     onExit: () => void;
 }
 
-export default function GameShell({ mode, onExit }: GameShellProps) {
+export default function GameShell({ mode, playerName, onExit }: GameShellProps) {
     const gameState = useGameState();
     const scoreHook = useScore();
     const leaderboard = useLeaderboard();
@@ -138,6 +139,7 @@ export default function GameShell({ mode, onExit }: GameShellProps) {
                 correctAnswers={gameState.correctAnswers}
                 maxCombo={scoreHook.maxCombo}
                 mode={mode}
+                playerName={playerName}
                 highScore={leaderboard.getHighScore(mode)}
                 onRestart={handleRestart}
                 onExit={onExit}
@@ -194,6 +196,9 @@ export default function GameShell({ mode, onExit }: GameShellProps) {
                                 ← Exit
                             </motion.button>
                             <div>
+                                <div className="text-[10px] uppercase tracking-widest opacity-50 mb-1">
+                                    Agent: <span style={{ color: 'var(--neon-green)' }}>{playerName}</span>
+                                </div>
                                 <div className="text-sm font-bold" style={{ color: 'var(--neon-blue)', fontFamily: "'Orbitron', sans-serif" }}>
                                     {MODE_LABELS[mode]}
                                 </div>
