@@ -1,12 +1,24 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import NeonButton from '../ui/NeonButton';
 import GlassCard from '../ui/GlassCard';
 import { socket } from '../../lib/socket';
 import { GameMode, MODE_LABELS } from '../../types/game';
 import ModeSelector from './ModeSelector';
+
+const VaultScene = dynamic(() => import('../three/VaultScene'), {
+    ssr: false,
+    loading: () => (
+        <div className="w-full h-[150px] flex items-center justify-center">
+            <div className="text-xs animate-pulse font-mono" style={{ color: 'var(--neon-blue)' }}>
+                INITIATING_SECURE_CHANNEL...
+            </div>
+        </div>
+    ),
+});
 
 interface Player {
     id: string;
@@ -314,6 +326,10 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
                     </div>
                 </motion.div>
             )}
+
+            <div className="w-full h-[180px] md:h-[220px] mt-8 relative z-0">
+                <VaultScene />
+            </div>
         </div>
     );
 }

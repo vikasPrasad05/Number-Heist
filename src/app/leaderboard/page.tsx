@@ -1,11 +1,23 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { LeaderboardEntry, MODE_LABELS, GameMode } from '../../types/game';
 import GlassCard from '../../components/ui/GlassCard';
 import NeonButton from '../../components/ui/NeonButton';
+
+const VaultScene = dynamic(() => import('../../components/three/VaultScene'), {
+    ssr: false,
+    loading: () => (
+        <div className="w-full h-[200px] flex items-center justify-center">
+            <div className="text-xs animate-pulse font-mono" style={{ color: 'var(--neon-blue)' }}>
+                INITIATING_VAULT_DECRYPT...
+            </div>
+        </div>
+    ),
+});
 
 const STORAGE_KEY = 'number-heist-leaderboard';
 
@@ -42,10 +54,14 @@ export default function LeaderboardPage() {
                 <motion.div
                     initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="text-center mb-8"
+                    className="text-center mb-0"
                 >
+                    <div className="relative h-[250px] md:h-[300px] -mb-12">
+                        <VaultScene />
+                    </div>
+
                     <Link href="/">
-                        <NeonButton color="blue" size="sm" className="mb-6">
+                        <NeonButton color="blue" size="sm" className="mb-6 relative z-10">
                             ← Back to Menu
                         </NeonButton>
                     </Link>
