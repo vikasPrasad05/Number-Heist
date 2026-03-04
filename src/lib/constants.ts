@@ -8,6 +8,7 @@ export const GAME_CONFIG = {
         'hidden-operator': 8,
         'multi-step-logic': 20,
         'daily-challenge': 12,
+        'remember-the-pattern': 15,
     },
     TIME_REDUCTION_PER_LEVEL: 0.5,
     MIN_TIME: 3,

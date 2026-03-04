@@ -269,10 +269,19 @@ export function generateDailyChallenge(): Puzzle[] {
 
 export function generatePuzzle(mode: string, level: number): Puzzle {
     switch (mode) {
-        case 'speed-math': return generateSpeedMath(level);
-        case 'pattern-recognition': return generatePatternPuzzle(level);
-        case 'hidden-operator': return generateHiddenOperator(level);
-        case 'multi-step-logic': return generateMultiStepLogic(level);
-        default: return generateSpeedMath(level);
+        case 'speed-math':
+            return generateSpeedMath(level);
+        case 'pattern-recognition':
+            return generatePatternPuzzle(level);
+        case 'hidden-operator':
+            return generateHiddenOperator(level);
+        case 'multi-step-logic':
+            return generateMultiStepLogic(level);
+        case 'remember-the-pattern':
+            const seqLen = 3 + (level - 1);
+            const sequence = Array.from({ length: seqLen }, () => Math.floor(Math.random() * 10));
+            return { type: 'remember-the-pattern', sequence };
+        default:
+            return generateSpeedMath(level);
     }
 }

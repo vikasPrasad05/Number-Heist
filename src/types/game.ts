@@ -1,6 +1,6 @@
 // ─── Game Types ───────────────────────────────────────────────
 
-export type GameMode = 'speed-math' | 'pattern-recognition' | 'hidden-operator' | 'multi-step-logic' | 'daily-challenge';
+export type GameMode = 'speed-math' | 'pattern-recognition' | 'hidden-operator' | 'multi-step-logic' | 'daily-challenge' | 'remember-the-pattern';
 
 export type Operator = '+' | '-' | '×' | '÷';
 
@@ -35,7 +35,12 @@ export interface MultiStepPuzzle {
     answer: number;
 }
 
-export type Puzzle = SpeedMathPuzzle | PatternPuzzle | HiddenOperatorPuzzle | MultiStepPuzzle;
+export interface RememberPatternPuzzle {
+    type: 'remember-the-pattern';
+    sequence: number[];
+}
+
+export type Puzzle = SpeedMathPuzzle | PatternPuzzle | HiddenOperatorPuzzle | MultiStepPuzzle | RememberPatternPuzzle;
 
 export interface GameState {
     mode: GameMode | null;
@@ -76,6 +81,7 @@ export const MODE_LABELS: Record<GameMode, string> = {
     'hidden-operator': 'Hidden Operator',
     'multi-step-logic': 'Multi-Step Logic',
     'daily-challenge': 'Daily Challenge',
+    'remember-the-pattern': 'Remember The Pattern',
 };
 
 export const MODE_DESCRIPTIONS: Record<GameMode, string> = {
@@ -84,6 +90,7 @@ export const MODE_DESCRIPTIONS: Record<GameMode, string> = {
     'hidden-operator': 'Find the missing operator',
     'multi-step-logic': 'Solve multi-variable equations',
     'daily-challenge': 'A fresh set of mixed puzzles every day',
+    'remember-the-pattern': 'Train your brain. Recall the sequence. Beat the clock.',
 };
 
 export const MODE_ICONS: Record<GameMode, string> = {
@@ -92,4 +99,5 @@ export const MODE_ICONS: Record<GameMode, string> = {
     'hidden-operator': '❓',
     'multi-step-logic': '🧠',
     'daily-challenge': '📅',
+    'remember-the-pattern': '🧩',
 };

@@ -7,9 +7,10 @@ import { MultiStepPuzzle } from '../../types/game';
 interface MultiStepLogicProps {
     puzzle: MultiStepPuzzle;
     onAnswer: (correct: boolean) => void;
+    locked?: boolean;
 }
 
-export default function MultiStepLogic({ puzzle, onAnswer }: MultiStepLogicProps) {
+export default function MultiStepLogic({ puzzle, onAnswer, locked = false }: MultiStepLogicProps) {
     const [input, setInput] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -21,11 +22,11 @@ export default function MultiStepLogic({ puzzle, onAnswer }: MultiStepLogicProps
     const handleSubmit = useCallback(
         (e: React.FormEvent) => {
             e.preventDefault();
-            if (!input.trim()) return;
+            if (!input.trim() || locked) return;
             const userAnswer = parseFloat(input);
             onAnswer(userAnswer === puzzle.answer);
         },
-        [input, puzzle.answer, onAnswer]
+        [input, puzzle.answer, onAnswer, locked]
     );
 
     return (
@@ -92,7 +93,10 @@ export default function MultiStepLogic({ puzzle, onAnswer }: MultiStepLogicProps
                             border: '1px solid rgba(0, 212, 255, 0.3)',
                             color: 'var(--text-primary)',
                             fontFamily: "'Orbitron', sans-serif",
+                            opacity: locked ? 0.5 : 1,
                         }}
+                        disabled={locked}
+                        readOnly={locked}
                         autoFocus
                     />
                     <motion.button
@@ -103,9 +107,12 @@ export default function MultiStepLogic({ puzzle, onAnswer }: MultiStepLogicProps
                             border: '1px solid rgba(0, 255, 136, 0.5)',
                             color: 'var(--neon-green)',
                             fontFamily: "'Orbitron', sans-serif",
+                            opacity: locked ? 0.4 : 1,
+                            pointerEvents: locked ? 'none' : 'auto',
                         }}
-                        whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(0, 255, 136, 0.3)' }}
-                        whileTap={{ scale: 0.95 }}
+                        whileHover={locked ? {} : { scale: 1.05, boxShadow: '0 0 20px rgba(0, 255, 136, 0.3)' }}
+                        whileTap={locked ? {} : { scale: 0.95 }}
+                        disabled={locked}
                     >
                         Submit ↵
                     </motion.button>

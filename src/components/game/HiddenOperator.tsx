@@ -7,6 +7,7 @@ import { HiddenOperatorPuzzle, Operator } from '../../types/game';
 interface HiddenOperatorProps {
     puzzle: HiddenOperatorPuzzle;
     onAnswer: (correct: boolean) => void;
+    locked?: boolean;
 }
 
 const operatorLabels: Record<Operator, string> = {
@@ -16,9 +17,10 @@ const operatorLabels: Record<Operator, string> = {
     '÷': '÷',
 };
 
-export default function HiddenOperator({ puzzle, onAnswer }: HiddenOperatorProps) {
+export default function HiddenOperator({ puzzle, onAnswer, locked = false }: HiddenOperatorProps) {
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
+            if (locked) return;
             const keyMap: Record<string, Operator> = {
                 '1': puzzle.choices[0],
                 '2': puzzle.choices[1],
@@ -31,7 +33,7 @@ export default function HiddenOperator({ puzzle, onAnswer }: HiddenOperatorProps
         };
         window.addEventListener('keydown', handleKey);
         return () => window.removeEventListener('keydown', handleKey);
-    }, [puzzle, onAnswer]);
+    }, [puzzle, onAnswer, locked]);
 
     return (
         <AnimatePresence mode="wait">
@@ -98,23 +100,26 @@ export default function HiddenOperator({ puzzle, onAnswer }: HiddenOperatorProps
                     {puzzle.choices.map((op, i) => (
                         <motion.button
                             key={op}
-                            onClick={() => onAnswer(op === puzzle.answer)}
+                            onClick={() => { if (!locked) onAnswer(op === puzzle.answer); }}
                             className="w-16 h-16 md:w-20 md:h-20 rounded-xl text-2xl md:text-3xl font-bold relative"
                             style={{
                                 background: 'rgba(0, 212, 255, 0.08)',
                                 border: '1px solid rgba(0, 212, 255, 0.3)',
                                 color: 'var(--neon-blue)',
                                 fontFamily: "'Orbitron', sans-serif",
+                                opacity: locked ? 0.4 : 1,
+                                pointerEvents: locked ? 'none' : 'auto',
                             }}
-                            whileHover={{
+                            whileHover={locked ? {} : {
                                 scale: 1.1,
                                 background: 'rgba(0, 212, 255, 0.2)',
                                 boxShadow: '0 0 25px rgba(0, 212, 255, 0.3)',
                             }}
-                            whileTap={{ scale: 0.9 }}
+                            whileTap={locked ? {} : { scale: 0.9 }}
                             initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
+                            animate={{ opacity: locked ? 0.4 : 1, y: 0 }}
                             transition={{ delay: i * 0.08 }}
+                            disabled={locked}
                         >
                             <span className="absolute top-1 left-2 text-[10px]" style={{ color: 'var(--text-secondary)' }}>
                                 {i + 1}

@@ -4,8 +4,8 @@ import { useState, useEffect, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
 import { GameMode } from '../types/game';
-import ModeSelector from '../components/game/ModeSelector';
-import GameShell from '../components/game/GameShell';
+import MultiplayerLobby from '../components/game/MultiplayerLobby';
+import MultiplayerGameShell from '../components/game/MultiplayerGameShell';
 import NeonButton from '../components/ui/NeonButton';
 import Link from 'next/link';
 
@@ -21,7 +21,7 @@ const VaultScene = dynamic(() => import('../components/three/VaultScene'), {
 });
 
 export default function Home() {
-  const [selectedMode, setSelectedMode] = useState<GameMode | null>(null);
+  const [activeRoom, setActiveRoom] = useState<any | null>(null);
   const [playerName, setPlayerName] = useState('');
   const [isNameSubmitted, setIsNameSubmitted] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -46,19 +46,19 @@ export default function Home() {
 
   if (!mounted) return null;
 
-  if (selectedMode) {
+  if (activeRoom) {
     return (
       <AnimatePresence mode="wait">
         <motion.div
-          key="game"
+          key="multiplayer-game"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          <GameShell
-            mode={selectedMode}
+          <MultiplayerGameShell
+            roomState={activeRoom}
             playerName={playerName}
-            onExit={() => setSelectedMode(null)}
+            onExit={() => setActiveRoom(null)}
           />
         </motion.div>
       </AnimatePresence>
@@ -100,22 +100,27 @@ export default function Home() {
         </motion.div>
 
         {/* 3D Vault */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.3, duration: 0.8 }}
-          className="w-full max-w-2xl mb-6"
-        >
-          <Suspense fallback={
-            <div className="w-full h-[300px] md:h-[400px] flex items-center justify-center">
-              <div className="text-sm animate-pulse" style={{ color: 'var(--neon-blue)' }}>
-                Loading vault...
-              </div>
-            </div>
-          }>
-            <VaultScene />
-          </Suspense>
-        </motion.div>
+        <AnimatePresence mode="wait">
+          {!isNameSubmitted && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ delay: 0.3, duration: 0.8 }}
+              className="w-full max-w-2xl mb-6"
+            >
+              <Suspense fallback={
+                <div className="w-full h-[300px] md:h-[400px] flex items-center justify-center">
+                  <div className="text-sm animate-pulse" style={{ color: 'var(--neon-blue)' }}>
+                    Loading vault...
+                  </div>
+                </div>
+              }>
+                <VaultScene />
+              </Suspense>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <AnimatePresence mode="wait">
           {!isNameSubmitted ? (
@@ -159,59 +164,30 @@ export default function Home() {
             </motion.div>
           ) : (
             <motion.div
-              key="game-content"
+              key="multiplayer-lobby"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="w-full flex flex-col items-center"
             >
-              <motion.div className="mb-4 flex items-center gap-3">
+              <motion.div className="mb-8 flex items-center gap-3">
                 <span className="text-xs uppercase tracking-widest opacity-50">Active Agent:</span>
                 <span className="text-sm font-bold tracking-widest" style={{ color: 'var(--neon-green)' }}>{playerName}</span>
                 <button
                   onClick={() => setIsNameSubmitted(false)}
-                  className="text-[10px] uppercase tracking-widest hover:text-white transition-colors opacity-30 hover:opacity-100"
+                  className="text-[10px] uppercase tracking-widest hover:text-white transition-colors opacity-30 hover:opacity-100 font-mono"
                 >
                   [Change]
                 </button>
               </motion.div>
 
-              {/* Subtitle */}
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.5 }}
-                className="text-center text-sm md:text-base mb-8 max-w-xl"
-                style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}
-              >
-                Solve math puzzles under time pressure. Build combos, level up, and climb the leaderboard.
-                Choose your challenge below.
-              </motion.p>
-
-              {/* Mode Selection */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6 }}
-                className="w-full max-w-5xl mb-8"
-              >
-                <ModeSelector onSelectMode={setSelectedMode} />
-              </motion.div>
+              <MultiplayerLobby
+                playerName={playerName}
+                onGameStart={(room) => setActiveRoom(room)}
+                onBack={() => setIsNameSubmitted(false)}
+              />
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Leaderboard Link */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.8 }}
-        >
-          <Link href="/leaderboard">
-            <NeonButton color="purple" size="md">
-              🏆 View Leaderboard
-            </NeonButton>
-          </Link>
-        </motion.div>
 
         {/* Footer */}
         <motion.div

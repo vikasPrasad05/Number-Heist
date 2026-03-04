@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GameMode, Puzzle } from '../../types/game';
 import { useTimer } from '../../hooks/useTimer';
@@ -13,6 +13,7 @@ import SpeedMath from './SpeedMath';
 import PatternRecognition from './PatternRecognition';
 import HiddenOperator from './HiddenOperator';
 import MultiStepLogic from './MultiStepLogic';
+import RememberThePattern from './RememberThePattern';
 import GameOver from './GameOver';
 import { MODE_LABELS } from '../../types/game';
 import { GAME_CONFIG } from '../../lib/constants';
@@ -36,6 +37,9 @@ export default function GameShell({ mode, playerName, onExit }: GameShellProps) 
     const scoreHook = useScore();
     const leaderboard = useLeaderboard();
     const feedbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    // Lock: true once an answer has been submitted for the current puzzle
+    const answeredRef = useRef(false);
+    const [isLocked, setIsLocked] = useState(false);
 
     const handleTimeUp = useCallback(() => {
         playGameOverSound();
@@ -54,9 +58,11 @@ export default function GameShell({ mode, playerName, onExit }: GameShellProps) 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode]);
 
-    // Start timer when puzzle changes
+    // Start timer when puzzle changes — also reset the answer lock
     useEffect(() => {
         if (gameState.currentPuzzle && gameState.isPlaying) {
+            answeredRef.current = false;
+            setIsLocked(false);
             timer.start(gameState.totalTime);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -64,7 +70,10 @@ export default function GameShell({ mode, playerName, onExit }: GameShellProps) 
 
     const handleAnswer = useCallback(
         (correct: boolean) => {
-            if (!gameState.isPlaying) return;
+            // Guard: only process the very first answer per puzzle
+            if (!gameState.isPlaying || answeredRef.current) return;
+            answeredRef.current = true;
+            setIsLocked(true);
             timer.stop();
 
             if (feedbackTimeoutRef.current) {
@@ -109,6 +118,14 @@ export default function GameShell({ mode, playerName, onExit }: GameShellProps) 
 
                 feedbackTimeoutRef.current = setTimeout(() => {
                     gameState.setFeedback(null);
+
+                    // Requirements: If wrong -> end round with final score
+                    if (gameState.mode === 'remember-the-pattern') {
+                        playGameOverSound();
+                        gameState.endGame();
+                        return;
+                    }
+
                     gameState.nextPuzzle();
                 }, GAME_CONFIG.ANSWER_FEEDBACK_DURATION);
             }
@@ -151,18 +168,31 @@ export default function GameShell({ mode, playerName, onExit }: GameShellProps) 
     }
 
     const renderPuzzle = () => {
+        // Remember The Pattern: self-contained component with its own timer
+        if (gameState.mode === 'remember-the-pattern') {
+            return (
+                <RememberThePattern
+                    key={gameState.questionsAnswered}
+                    level={gameState.level}
+                    correctAnswers={gameState.correctAnswers}
+                    onAnswer={handleAnswer}
+                    locked={isLocked}
+                />
+            );
+        }
+
         if (!gameState.currentPuzzle) return null;
         const puzzle = gameState.currentPuzzle;
 
         switch (puzzle.type) {
             case 'speed-math':
-                return <SpeedMath puzzle={puzzle} onAnswer={handleAnswer} />;
+                return <SpeedMath puzzle={puzzle} onAnswer={handleAnswer} locked={isLocked} />;
             case 'pattern-recognition':
-                return <PatternRecognition puzzle={puzzle} onAnswer={handleAnswer} />;
+                return <PatternRecognition puzzle={puzzle} onAnswer={handleAnswer} locked={isLocked} />;
             case 'hidden-operator':
-                return <HiddenOperator puzzle={puzzle} onAnswer={handleAnswer} />;
+                return <HiddenOperator puzzle={puzzle} onAnswer={handleAnswer} locked={isLocked} />;
             case 'multi-step-logic':
-                return <MultiStepLogic puzzle={puzzle} onAnswer={handleAnswer} />;
+                return <MultiStepLogic puzzle={puzzle} onAnswer={handleAnswer} locked={isLocked} />;
             default:
                 return null;
         }
@@ -209,7 +239,9 @@ export default function GameShell({ mode, playerName, onExit }: GameShellProps) 
                         </div>
                         <ScoreCounter score={scoreHook.score} combo={scoreHook.combo} multiplier={scoreHook.multiplier} />
                     </div>
-                    <TimerBar fraction={timer.fraction} timeRemaining={timer.timeRemaining} />
+                    {mode !== 'remember-the-pattern' && (
+                        <TimerBar fraction={timer.fraction} timeRemaining={timer.timeRemaining} />
+                    )}
                 </div>
             </div>
 
