@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import { GameMode } from '../types/game';
 import MultiplayerLobby from '../components/game/MultiplayerLobby';
 import MultiplayerGameShell from '../components/game/MultiplayerGameShell';
+import GameShell from '../components/game/GameShell';
 import NeonButton from '../components/ui/NeonButton';
 import Link from 'next/link';
 
@@ -22,6 +23,7 @@ const VaultScene = dynamic(() => import('../components/three/VaultScene'), {
 
 export default function Home() {
   const [activeRoom, setActiveRoom] = useState<any | null>(null);
+  const [selectedSoloMode, setSelectedSoloMode] = useState<GameMode | null>(null);
   const [playerName, setPlayerName] = useState('');
   const [isNameSubmitted, setIsNameSubmitted] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -59,6 +61,25 @@ export default function Home() {
             roomState={activeRoom}
             playerName={playerName}
             onExit={() => setActiveRoom(null)}
+          />
+        </motion.div>
+      </AnimatePresence>
+    );
+  }
+
+  if (selectedSoloMode) {
+    return (
+      <AnimatePresence mode="wait">
+        <motion.div
+          key="solo-game"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <GameShell
+            mode={selectedSoloMode}
+            playerName={playerName}
+            onExit={() => setSelectedSoloMode(null)}
           />
         </motion.div>
       </AnimatePresence>
@@ -183,6 +204,7 @@ export default function Home() {
               <MultiplayerLobby
                 playerName={playerName}
                 onGameStart={(room) => setActiveRoom(room)}
+                onSoloMode={(mode) => setSelectedSoloMode(mode)}
                 onBack={() => setIsNameSubmitted(false)}
               />
             </motion.div>

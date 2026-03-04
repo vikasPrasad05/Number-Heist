@@ -29,11 +29,12 @@ interface RoomState {
 interface MultiplayerLobbyProps {
     playerName: string;
     onGameStart: (room: RoomState) => void;
+    onSoloMode: (mode: GameMode) => void;
     onBack: () => void;
 }
 
-export default function MultiplayerLobby({ playerName, onGameStart, onBack }: MultiplayerLobbyProps) {
-    const [lobbyView, setLobbyView] = useState<'menu' | 'create' | 'join' | 'in-room'>('menu');
+export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, onBack }: MultiplayerLobbyProps) {
+    const [lobbyView, setLobbyView] = useState<'menu' | 'create' | 'join' | 'in-room' | 'solo-select'>('menu');
     const [joinCode, setJoinCode] = useState('');
     const [errorMsg, setErrorMsg] = useState('');
     const [roomState, setRoomState] = useState<RoomState | null>(null);
@@ -130,19 +131,44 @@ export default function MultiplayerLobby({ playerName, onGameStart, onBack }: Mu
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0 }}
-                    className="flex flex-col md:flex-row gap-6 w-full max-w-2xl justify-center"
+                    className="flex flex-col md:flex-row gap-4 w-full max-w-4xl justify-center items-stretch"
                 >
-                    <GlassCard className="flex-1 p-8 flex flex-col items-center justify-center text-center group">
-                        <h3 className="text-2xl font-bold mb-4 text-[#00d4ff]" style={{ fontFamily: "'Orbitron', sans-serif" }}>CREATE ROOM</h3>
-                        <p className="text-sm text-gray-400 mb-6 font-mono">Host a match and select the game mode.</p>
-                        <NeonButton color="blue" onClick={handleCreateClick} className="w-full">CREATE</NeonButton>
+                    <GlassCard className="flex-1 p-6 flex flex-col items-center justify-center text-center group">
+                        <h3 className="text-xl font-bold mb-3 text-[#00ff88]" style={{ fontFamily: "'Orbitron', sans-serif" }}>SOLO MODE</h3>
+                        <p className="text-xs text-gray-400 mb-6 font-mono">Immediate access. Perfect for training.</p>
+                        <NeonButton color="green" onClick={() => setLobbyView('solo-select')} className="w-full">TRAIN SOLO</NeonButton>
                     </GlassCard>
 
-                    <GlassCard className="flex-1 p-8 flex flex-col items-center justify-center text-center group">
-                        <h3 className="text-2xl font-bold mb-4 text-[#00ff88]" style={{ fontFamily: "'Orbitron', sans-serif" }}>JOIN ROOM</h3>
-                        <p className="text-sm text-gray-400 mb-6 font-mono">Join an existing match using a 5-letter code.</p>
-                        <NeonButton color="green" onClick={handleJoinClick} className="w-full">JOIN</NeonButton>
+                    <GlassCard className="flex-1 p-6 flex flex-col items-center justify-center text-center group">
+                        <h3 className="text-xl font-bold mb-3 text-[#00d4ff]" style={{ fontFamily: "'Orbitron', sans-serif" }}>CREATE ROOM</h3>
+                        <p className="text-xs text-gray-400 mb-6 font-mono">Host a match and select the game mode.</p>
+                        <NeonButton color="blue" onClick={handleCreateClick} className="w-full">HOST ROOM</NeonButton>
                     </GlassCard>
+
+                    <GlassCard className="flex-1 p-6 flex flex-col items-center justify-center text-center group">
+                        <h3 className="text-xl font-bold mb-3 text-[#b44dff]" style={{ fontFamily: "'Orbitron', sans-serif" }}>JOIN ROOM</h3>
+                        <p className="text-xs text-gray-400 mb-6 font-mono">Join an existing match via access code.</p>
+                        <NeonButton color="purple" onClick={handleJoinClick} className="w-full">JOIN PLAYER</NeonButton>
+                    </GlassCard>
+                </motion.div>
+            )}
+
+            {/* SOLO SELECT VIEW */}
+            {lobbyView === 'solo-select' && (
+                <motion.div
+                    key="solo-select"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="w-full"
+                >
+                    <h2 className="text-2xl font-bold text-center mb-8 text-white/80 tracking-widest uppercase text-[#00ff88]">SOLO TRAINING: Select Mode</h2>
+                    <ModeSelector onSelectMode={(mode) => onSoloMode(mode)} />
+                    <div className="mt-8 flex justify-center">
+                        <button onClick={() => setLobbyView('menu')} className="text-gray-500 hover:text-white text-sm uppercase tracking-widest transition-colors font-mono">
+                            [ Back To Menu ]
+                        </button>
+                    </div>
                 </motion.div>
             )}
 
