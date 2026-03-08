@@ -127,7 +127,7 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
                 };
 
                 setRoomState(newState);
-                roomChannel.publish('room_state_update', newState);
+                roomChannel.publish({ name: 'room_state_update', data: newState });
             });
         };
 
@@ -216,11 +216,11 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
 
         if (isHost) {
             setRoomState(newState);
-            roomChannel.publish('room_state_update', newState);
+            roomChannel.publish({ name: 'room_state_update', data: newState });
             checkAllReady(newState);
         } else {
             // Just publish our ready state for the host to handle
-            roomChannel.publish('player_ready', { clientId });
+            roomChannel.publish({ name: 'player_ready', data: { clientId } });
         }
     };
 
@@ -238,7 +238,7 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
             );
             const newState = { ...roomState, players: updatedPlayers };
             setRoomState(newState);
-            roomChannel.publish('room_state_update', newState);
+            roomChannel.publish({ name: 'room_state_update', data: newState });
             checkAllReady(newState);
         };
 
@@ -252,17 +252,17 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
 
             const updatedState = { ...state, status: 'countdown' };
             setRoomState(updatedState);
-            roomChannel.publish('room_state_update', updatedState);
+            roomChannel.publish({ name: 'room_state_update', data: updatedState });
 
             // Start countdown
-            roomChannel.publish('start_countdown', 3);
-            setTimeout(() => roomChannel.publish('start_countdown', 2), 1000);
-            setTimeout(() => roomChannel.publish('start_countdown', 1), 2000);
+            roomChannel.publish({ name: 'start_countdown', data: 3 });
+            setTimeout(() => roomChannel.publish({ name: 'start_countdown', data: 2 }), 1000);
+            setTimeout(() => roomChannel.publish({ name: 'start_countdown', data: 1 }), 2000);
             setTimeout(() => {
                 const playingState = { ...updatedState, status: 'playing', round: 1 };
                 setRoomState(playingState);
-                roomChannel.publish('room_state_update', playingState);
-                roomChannel.publish('round_start', { round: 1 });
+                roomChannel.publish({ name: 'room_state_update', data: playingState });
+                roomChannel.publish({ name: 'round_start', data: { round: 1 } });
             }, 3000);
         }
     };
