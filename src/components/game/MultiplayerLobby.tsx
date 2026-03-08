@@ -80,17 +80,23 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
         const isHost = roomState.players.find(p => p.id === clientId)?.isHost;
 
         // Enter presence so others know we are here
-        roomChannel.presence.get((err, members) => {
-            if (err) return console.error(err);
-            // If we are Host, we don't check for capacity, but if we are just joining:
-            if (!isHost && members && members.length >= 2) {
-                setErrorMsg('Room is full');
-                setRoomState(null);
-                setLobbyView('menu');
-                return;
+        const initPresence = async () => {
+            try {
+                const members = await roomChannel.presence.get();
+                // If we are Host, we don't check for capacity, but if we are just joining:
+                if (!isHost && members && members.length >= 2) {
+                    setErrorMsg('Room is full');
+                    setRoomState(null);
+                    setLobbyView('menu');
+                    return;
+                }
+                await roomChannel.presence.enter({ name: playerName, isHost });
+            } catch (err) {
+                console.error('Presence error:', err);
             }
-            roomChannel.presence.enter({ name: playerName, isHost });
-        });
+        };
+
+        initPresence();
 
         const onRoomStateUpdate = (msg: any) => {
             // Only non-hosts update their state from the host's broadcast
@@ -106,11 +112,12 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
         roomChannel.subscribe('round_start', onRoundStart);
 
         // Host logic to manage presence and broadcast state
-        const updatePresenceInState = () => {
+        const updatePresenceInState = async () => {
             if (!isHost) return;
 
-            roomChannel.presence.get((err, members) => {
-                if (err || !members) return;
+            try {
+                const members = await roomChannel.presence.get();
+                if (!members) return;
 
                 const currentPlayers = Array.from(members).map(m => ({
                     id: m.clientId,
@@ -128,7 +135,9 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
 
                 setRoomState(newState);
                 roomChannel.publish({ name: 'room_state_update', data: newState });
-            });
+            } catch (err) {
+                console.error('Update presence error:', err);
+            }
         };
 
         const onPresenceJoin = () => updatePresenceInState();
