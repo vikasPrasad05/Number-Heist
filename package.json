@@ -3,21 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node server.js",
+    "dev": "next dev",
     "build": "next build",
-    "start": "NODE_ENV=production node server.js",
-    "lint": "eslint"
+    "start": "next start",
+    "lint": "next lint"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
+    "ably": "^2.19.0",
     "framer-motion": "^12.34.4",
     "howler": "^2.2.4",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.3",
     "three": "^0.183.2"
   },
   "devDependencies": {

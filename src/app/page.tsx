@@ -98,13 +98,12 @@ export default function Home() {
           className="text-center mb-4"
         >
           <h1
-            className="text-4xl md:text-6xl lg:text-7xl font-black tracking-wider mb-3"
+            className="text-4xl md:text-6xl lg:text-7xl font-black tracking-widest mb-4"
             style={{
               fontFamily: "'Orbitron', sans-serif",
-              background: 'linear-gradient(135deg, #00d4ff, #00ff88, #b44dff)',
+              background: 'linear-gradient(to bottom right, #ffffff, #71717a)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
-              filter: 'drop-shadow(0 0 30px rgba(0, 212, 255, 0.3))',
             }}
           >
             NUMBER HEIST
@@ -147,18 +146,17 @@ export default function Home() {
           {!isNameSubmitted ? (
             <motion.div
               key="name-entry"
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md p-8 rounded-2xl border border-white/10 bg-black/40 backdrop-blur-xl mb-8"
-              style={{ boxShadow: '0 0 40px rgba(0,0,0,0.5)' }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="w-full max-w-md p-10 rounded-2xl border border-white/5 bg-white/[0.02] backdrop-blur-xl mb-8"
             >
-              <h2 className="text-xl font-bold mb-6 text-center tracking-wider" style={{ color: 'var(--neon-blue)', fontFamily: "'Orbitron', sans-serif" }}>
+              <h2 className="text-xl font-semibold mb-8 text-center tracking-[0.2em] text-white/90">
                 IDENTIFY YOURSELF
               </h2>
               <form onSubmit={handleNameSubmit} className="space-y-6">
                 <div>
-                  <label htmlFor="playerName" className="block text-xs uppercase tracking-widest mb-2 opacity-50">
+                  <label htmlFor="playerName" className="block text-xs uppercase tracking-[0.2em] mb-3 text-white/40">
                     Agent Callsign
                   </label>
                   <input
@@ -167,8 +165,7 @@ export default function Home() {
                     value={playerName}
                     onChange={(e) => setPlayerName(e.target.value)}
                     placeholder="Enter your name..."
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-[#00d4ff]/50 transition-colors text-lg"
-                    style={{ fontFamily: "'Orbitron', sans-serif" }}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 outline-none focus:border-white/30 transition-all text-lg font-mono text-center tracking-widest placeholder:text-white/20"
                     autoComplete="off"
                     autoFocus
                   />
@@ -190,9 +187,9 @@ export default function Home() {
               animate={{ opacity: 1 }}
               className="w-full flex flex-col items-center"
             >
-              <motion.div className="mb-8 flex items-center gap-3">
-                <span className="text-xs uppercase tracking-widest opacity-50">Active Agent:</span>
-                <span className="text-sm font-bold tracking-widest" style={{ color: 'var(--neon-green)' }}>{playerName}</span>
+              <motion.div className="mb-12 flex items-center justify-center gap-4 bg-white/[0.02] px-6 py-3 rounded-full border border-white/5">
+                <span className="text-xs uppercase tracking-[0.2em] text-white/40">Active Agent:</span>
+                <span className="text-sm tracking-[0.2em] font-mono text-white/90">{playerName}</span>
                 <button
                   onClick={() => setIsNameSubmitted(false)}
                   className="text-[10px] uppercase tracking-widest hover:text-white transition-colors opacity-30 hover:opacity-100 font-mono"

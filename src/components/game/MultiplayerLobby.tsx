@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import NeonButton from '../ui/NeonButton';
 import GlassCard from '../ui/GlassCard';
-import { socket } from '../../lib/socket';
+import { ablyClient } from '../../lib/ably';
 import { GameMode, MODE_LABELS } from '../../types/game';
 import ModeSelector from './ModeSelector';
 
@@ -52,47 +52,107 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
     const [roomState, setRoomState] = useState<RoomState | null>(null);
     const [countdown, setCountdown] = useState<number | null>(null);
 
-    useEffect(() => {
-        if (!socket.connected) {
-            socket.connect();
+    // Client specific channel for direct responses (less needed in the new model, but keeping for direct events)
+    const clientId = ablyClient.auth.clientId;
+
+    function generateRoomCode() {
+        let result = '';
+        const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        for (let i = 0; i < 5; i++) {
+            result += characters.charAt(Math.floor(Math.random() * characters.length));
         }
+        return result;
+    }
 
-        socket.on('room_created', ({ roomCode }) => {
-            setLobbyView('in-room');
-            setErrorMsg('');
-        });
-
-        socket.on('room_joined', ({ roomCode }) => {
-            setLobbyView('in-room');
-            setErrorMsg('');
-        });
-
-        socket.on('room_state_update', (state: RoomState) => {
-            setRoomState(state);
-        });
-
-        socket.on('error', (msg: string) => {
-            setErrorMsg(msg);
-        });
-
-        socket.on('start_countdown', (count: number) => {
-            setCountdown(count);
-        });
-
-        socket.on('round_start', () => {
-            // Let the parent know the game should start
-            if (roomState) onGameStart(roomState);
-        });
+    useEffect(() => {
+        // Connect to Ably
+        ablyClient.connect();
 
         return () => {
-            socket.off('room_created');
-            socket.off('room_joined');
-            socket.off('room_state_update');
-            socket.off('error');
-            socket.off('start_countdown');
-            socket.off('round_start');
+            // ablyClient.close(); // Careful on unmount if it's meant to persist between screens
         };
-    }, [roomState, onGameStart]);
+    }, []);
+
+    useEffect(() => {
+        if (!roomState?.id) return;
+
+        const roomChannel = ablyClient.channels.get(`room:${roomState.id}`);
+        const isHost = roomState.players.find(p => p.id === clientId)?.isHost;
+
+        // Enter presence so others know we are here
+        roomChannel.presence.get((err, members) => {
+            if (err) return console.error(err);
+            // If we are Host, we don't check for capacity, but if we are just joining:
+            if (!isHost && members && members.length >= 2) {
+                setErrorMsg('Room is full');
+                setRoomState(null);
+                setLobbyView('menu');
+                return;
+            }
+            roomChannel.presence.enter({ name: playerName, isHost });
+        });
+
+        const onRoomStateUpdate = (msg: any) => {
+            // Only non-hosts update their state from the host's broadcast
+            if (!isHost) {
+                setRoomState(msg.data);
+            }
+        };
+        const onStartCountdown = (msg: any) => setCountdown(msg.data);
+        const onRoundStart = () => { if (roomState) onGameStart(roomState); };
+
+        roomChannel.subscribe('room_state_update', onRoomStateUpdate);
+        roomChannel.subscribe('start_countdown', onStartCountdown);
+        roomChannel.subscribe('round_start', onRoundStart);
+
+        // Host logic to manage presence and broadcast state
+        const updatePresenceInState = () => {
+            if (!isHost) return;
+
+            roomChannel.presence.get((err, members) => {
+                if (err || !members) return;
+
+                const currentPlayers = Array.from(members).map(m => ({
+                    id: m.clientId,
+                    name: (m.data as any).name || 'Unknown',
+                    score: roomState.players.find(p => p.id === m.clientId)?.score || 0,
+                    ready: roomState.players.find(p => p.id === m.clientId)?.ready || false,
+                    connected: true,
+                    isHost: (m.data as any).isHost || false
+                }));
+
+                const newState = {
+                    ...roomState,
+                    players: currentPlayers
+                };
+
+                setRoomState(newState);
+                roomChannel.publish('room_state_update', newState);
+            });
+        };
+
+        const onPresenceJoin = () => updatePresenceInState();
+        const onPresenceLeave = (member: any) => {
+            if (isHost) {
+                updatePresenceInState();
+            } else if (member.data?.isHost) {
+                setErrorMsg('Host has disconnected');
+                setRoomState(null);
+                setLobbyView('menu');
+            }
+        };
+
+        roomChannel.presence.subscribe('enter', onPresenceJoin);
+        roomChannel.presence.subscribe('leave', onPresenceLeave);
+
+        return () => {
+            roomChannel.unsubscribe('room_state_update', onRoomStateUpdate);
+            roomChannel.unsubscribe('start_countdown', onStartCountdown);
+            roomChannel.unsubscribe('round_start', onRoundStart);
+            roomChannel.presence.unsubscribe('enter', onPresenceJoin);
+            roomChannel.presence.unsubscribe('leave', onPresenceLeave);
+        };
+    }, [roomState?.id, onGameStart, playerName, clientId]);
 
     const handleCreateClick = () => {
         setLobbyView('create');
@@ -105,19 +165,105 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
     };
 
     const handleModeSelect = (mode: GameMode) => {
-        socket.emit('create_room', { playerName, mode });
+        const code = generateRoomCode();
+        const initialRoom: RoomState = {
+            id: code,
+            status: 'lobby',
+            players: [{
+                id: clientId,
+                name: playerName,
+                score: 0,
+                ready: false,
+                connected: true,
+                isHost: true
+            }],
+            mode,
+            round: 0,
+            maxRounds: 5
+        };
+        setRoomState(initialRoom);
+        setLobbyView('in-room');
     };
 
     const submitJoin = (e: React.FormEvent) => {
         e.preventDefault();
-        if (joinCode.trim().length === 5) {
-            socket.emit('join_room', { roomCode: joinCode.trim().toUpperCase(), playerName });
+        const code = joinCode.trim().toUpperCase();
+        if (code.length === 5) {
+            // Join as non-host player
+            setRoomState({
+                id: code,
+                status: 'lobby',
+                players: [], // Will be populated by room_state_update from host
+                mode: 'speed-math', // Temporary, will be updated by host
+                round: 0,
+                maxRounds: 5
+            });
+            setLobbyView('in-room');
         }
     };
 
     const handleReady = () => {
-        if (roomState) {
-            socket.emit('player_ready', { roomCode: roomState.id });
+        if (!roomState) return;
+
+        const isHost = roomState.players.find(p => p.id === clientId)?.isHost;
+        const updatedPlayers = roomState.players.map(p =>
+            p.id === clientId ? { ...p, ready: true } : p
+        );
+
+        const newState = { ...roomState, players: updatedPlayers };
+
+        const roomChannel = ablyClient.channels.get(`room:${roomState.id}`);
+
+        if (isHost) {
+            setRoomState(newState);
+            roomChannel.publish('room_state_update', newState);
+            checkAllReady(newState);
+        } else {
+            // Just publish our ready state for the host to handle
+            roomChannel.publish('player_ready', { clientId });
+        }
+    };
+
+    // Host Only: Listen for ready signal from other player
+    useEffect(() => {
+        if (!roomState || !roomState.id) return;
+        const isHost = roomState.players.find(p => p.id === clientId)?.isHost;
+        if (!isHost) return;
+
+        const roomChannel = ablyClient.channels.get(`room:${roomState.id}`);
+        const onOtherReady = (msg: any) => {
+            const pid = msg.data.clientId;
+            const updatedPlayers = roomState.players.map(p =>
+                p.id === pid ? { ...p, ready: true } : p
+            );
+            const newState = { ...roomState, players: updatedPlayers };
+            setRoomState(newState);
+            roomChannel.publish('room_state_update', newState);
+            checkAllReady(newState);
+        };
+
+        roomChannel.subscribe('player_ready', onOtherReady);
+        return () => { roomChannel.unsubscribe('player_ready', onOtherReady); };
+    }, [roomState?.id, roomState?.players, clientId]);
+
+    const checkAllReady = (state: RoomState) => {
+        if (state.players.length === 2 && state.players.every(p => p.ready) && state.status === 'lobby') {
+            const roomChannel = ablyClient.channels.get(`room:${state.id}`);
+
+            const updatedState = { ...state, status: 'countdown' };
+            setRoomState(updatedState);
+            roomChannel.publish('room_state_update', updatedState);
+
+            // Start countdown
+            roomChannel.publish('start_countdown', 3);
+            setTimeout(() => roomChannel.publish('start_countdown', 2), 1000);
+            setTimeout(() => roomChannel.publish('start_countdown', 1), 2000);
+            setTimeout(() => {
+                const playingState = { ...updatedState, status: 'playing', round: 1 };
+                setRoomState(playingState);
+                roomChannel.publish('room_state_update', playingState);
+                roomChannel.publish('round_start', { round: 1 });
+            }, 3000);
         }
     };
 
@@ -140,26 +286,26 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
             {lobbyView === 'menu' && (
                 <motion.div
                     key="menu"
-                    initial={{ opacity: 0, scale: 0.95 }}
+                    initial={{ opacity: 0, scale: 0.98 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0 }}
-                    className="flex flex-col md:flex-row gap-4 w-full max-w-4xl justify-center items-stretch"
+                    className="flex flex-col md:flex-row gap-6 w-full max-w-4xl justify-center items-stretch"
                 >
-                    <GlassCard className="flex-1 p-6 flex flex-col items-center justify-center text-center group">
-                        <h3 className="text-xl font-bold mb-3 text-[#00ff88]" style={{ fontFamily: "'Orbitron', sans-serif" }}>SOLO MODE</h3>
-                        <p className="text-xs text-gray-400 mb-6 font-mono">Immediate access. Perfect for training.</p>
+                    <GlassCard className="flex-1 p-8 flex flex-col items-center justify-center text-center group">
+                        <h3 className="text-sm font-semibold mb-3 tracking-[0.2em] text-white/90 uppercase">Solo Mode</h3>
+                        <p className="text-xs text-white/40 mb-8 font-mono">Immediate access. Perfect for training.</p>
                         <NeonButton color="green" onClick={() => setLobbyView('solo-select')} className="w-full">TRAIN SOLO</NeonButton>
                     </GlassCard>
 
-                    <GlassCard className="flex-1 p-6 flex flex-col items-center justify-center text-center group">
-                        <h3 className="text-xl font-bold mb-3 text-[#00d4ff]" style={{ fontFamily: "'Orbitron', sans-serif" }}>CREATE ROOM</h3>
-                        <p className="text-xs text-gray-400 mb-6 font-mono">Host a match and select the game mode.</p>
+                    <GlassCard className="flex-1 p-8 flex flex-col items-center justify-center text-center group">
+                        <h3 className="text-sm font-semibold mb-3 tracking-[0.2em] text-white/90 uppercase">Create Room</h3>
+                        <p className="text-xs text-white/40 mb-8 font-mono">Host a match and select the game mode.</p>
                         <NeonButton color="blue" onClick={handleCreateClick} className="w-full">HOST ROOM</NeonButton>
                     </GlassCard>
 
-                    <GlassCard className="flex-1 p-6 flex flex-col items-center justify-center text-center group">
-                        <h3 className="text-xl font-bold mb-3 text-[#b44dff]" style={{ fontFamily: "'Orbitron', sans-serif" }}>JOIN ROOM</h3>
-                        <p className="text-xs text-gray-400 mb-6 font-mono">Join an existing match via access code.</p>
+                    <GlassCard className="flex-1 p-8 flex flex-col items-center justify-center text-center group">
+                        <h3 className="text-sm font-semibold mb-3 tracking-[0.2em] text-white/90 uppercase">Join Room</h3>
+                        <p className="text-xs text-white/40 mb-8 font-mono">Join an existing match via access code.</p>
                         <NeonButton color="purple" onClick={handleJoinClick} className="w-full">JOIN PLAYER</NeonButton>
                     </GlassCard>
                 </motion.div>
@@ -174,7 +320,7 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
                     exit={{ opacity: 0 }}
                     className="w-full"
                 >
-                    <h2 className="text-2xl font-bold text-center mb-8 text-white/80 tracking-widest uppercase text-[#00ff88]">SOLO TRAINING: Select Mode</h2>
+                    <h2 className="text-lg font-semibold text-center mb-10 text-white/90 tracking-[0.2em] uppercase">SOLO TRAINING: Select Mode</h2>
                     <ModeSelector onSelectMode={(mode) => onSoloMode(mode)} />
                     <div className="mt-8 flex justify-center">
                         <button onClick={() => setLobbyView('menu')} className="text-gray-500 hover:text-white text-sm uppercase tracking-widest transition-colors font-mono">
@@ -193,7 +339,7 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
                     exit={{ opacity: 0 }}
                     className="w-full"
                 >
-                    <h2 className="text-2xl font-bold text-center mb-8 text-white/80 tracking-widest uppercase text-[#00d4ff]">Select Game Mode</h2>
+                    <h2 className="text-lg font-semibold text-center mb-10 text-white/90 tracking-[0.2em] uppercase">Select Game Mode</h2>
                     <ModeSelector onSelectMode={handleModeSelect} />
                     <div className="mt-8 flex justify-center">
                         <button onClick={() => setLobbyView('menu')} className="text-gray-500 hover:text-white text-sm uppercase tracking-widest transition-colors font-mono">
@@ -207,21 +353,20 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
             {lobbyView === 'join' && (
                 <motion.div
                     key="join"
-                    initial={{ opacity: 0, scale: 0.95 }}
+                    initial={{ opacity: 0, scale: 0.98 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="w-full max-w-md p-8 rounded-2xl border border-white/10 bg-black/40 backdrop-blur-xl"
+                    exit={{ opacity: 0, scale: 0.98 }}
+                    className="w-full max-w-md p-10 rounded-2xl border border-white/5 bg-white/[0.02] backdrop-blur-xl"
                 >
-                    <h2 className="text-xl font-bold mb-6 text-center tracking-wider text-[#00ff88]" style={{ fontFamily: "'Orbitron', sans-serif" }}>ENTER ROOM CODE</h2>
-                    <form onSubmit={submitJoin} className="space-y-6">
+                    <h2 className="text-sm font-semibold mb-8 text-center tracking-[0.2em] text-white/90 uppercase">ENTER ROOM CODE</h2>
+                    <form onSubmit={submitJoin} className="space-y-8">
                         <input
                             type="text"
                             value={joinCode}
                             onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                             placeholder="ABC12"
                             maxLength={5}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-[#00ff88]/50 transition-colors text-2xl text-center tracking-[0.5em]"
-                            style={{ fontFamily: "'Orbitron', sans-serif" }}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 outline-none focus:border-white/30 transition-all text-2xl text-center tracking-[0.5em] font-mono placeholder:text-white/20"
                             autoFocus
                         />
                         <NeonButton type="submit" className="w-full" disabled={joinCode.trim().length !== 5} color="green">
@@ -244,38 +389,37 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
                     animate={{ opacity: 1, y: 0 }}
                     className="w-full max-w-3xl"
                 >
-                    <div className="flex justify-between items-center mb-8">
-                        <div>
-                            <h2 className="text-3xl font-bold tracking-wider text-white" style={{ fontFamily: "'Orbitron', sans-serif" }}>
-                                ROOM: <span className="text-[#b44dff]">{roomState.id}</span>
-                            </h2>
-                            <p className="text-sm text-gray-400 mt-2 font-mono uppercase tracking-widest">
-                                Mode: <span className="text-white">{MODE_LABELS[roomState.mode]}</span>
-                            </p>
+                    <div className="flex flex-col items-center mb-10 text-center">
+                        <h2 className="text-2xl font-bold tracking-[0.2em] text-white">
+                            ROOM: <span className="text-white/70 font-mono tracking-widest ml-2">{roomState.id}</span>
+                        </h2>
+                        <div className="flex items-center gap-3 mt-4 text-xs font-mono uppercase tracking-[0.2em]">
+                            <span className="text-white/40">Mode:</span>
+                            <span className="text-white/90 bg-white/10 px-3 py-1 rounded-full">{MODE_LABELS[roomState.mode]}</span>
                         </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
                         {roomState.players.map((p) => {
-                            const isMe = p.id === socket.id;
+                            const isMe = p.id === ablyClient.auth.clientId;
                             return (
                                 <GlassCard key={p.id} className="p-6 relative overflow-hidden" glow={p.ready ? 'green' : 'none'}>
                                     {/* Player Status / Connection */}
-                                    <div className="absolute top-4 right-4 flex items-center gap-2">
-                                        <div className={`w-2 h-2 rounded-full ${p.connected ? 'bg-green-500' : 'bg-red-500'}`} />
+                                    <div className="absolute top-6 right-6 flex items-center gap-2">
+                                        <div className={`w-1.5 h-1.5 rounded-full ${p.connected ? 'bg-[#00ff88]' : 'bg-[#ff3366]'}`} />
                                     </div>
-                                    <h3 className="text-xl font-bold mb-2 tracking-wider" style={{ fontFamily: "'Orbitron', sans-serif", color: isMe ? '#00d4ff' : 'white' }}>
+                                    <h3 className={`text-lg font-medium mb-1 tracking-[0.1em] ${isMe ? 'text-white' : 'text-white/70'}`}>
                                         {p.name} {isMe ? '(YOU)' : ''}
                                     </h3>
-                                    {p.isHost && <p className="text-xs text-[#b44dff] mb-4 uppercase font-bold tracking-widest">Host</p>}
+                                    {p.isHost && <p className="text-[10px] text-white/40 mb-6 uppercase font-mono tracking-[0.2em]">Host</p>}
 
                                     <div className="mt-4">
                                         {p.ready ? (
-                                            <span className="text-green-400 font-bold uppercase tracking-widest text-sm bg-green-500/10 px-3 py-1 rounded border border-green-500/30">
+                                            <span className="text-[#00ff88] font-medium uppercase tracking-[0.2em] text-[10px] bg-[#00ff88]/10 px-3 py-1.5 rounded-full border border-[#00ff88]/20">
                                                 READY
                                             </span>
                                         ) : (
-                                            <span className="text-gray-400 font-bold uppercase tracking-widest text-sm bg-gray-500/10 px-3 py-1 rounded border border-gray-500/30">
+                                            <span className="text-white/40 font-medium uppercase tracking-[0.2em] text-[10px] bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
                                                 WAITING
                                             </span>
                                         )}
@@ -294,31 +438,30 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
                     <div className="flex justify-center flex-col items-center">
                         {countdown !== null ? (
                             <motion.div
-                                initial={{ scale: 0.5, opacity: 0 }}
+                                initial={{ scale: 0.9, opacity: 0 }}
                                 animate={{ scale: 1, opacity: 1 }}
                                 key={countdown}
-                                className="text-6xl font-bold text-[#00ff88] drop-shadow-[0_0_20px_rgba(0,255,136,0.8)]"
-                                style={{ fontFamily: "'Orbitron', sans-serif" }}
+                                className="text-6xl font-light text-white tracking-widest"
                             >
                                 {countdown}
                             </motion.div>
                         ) : (
                             <NeonButton
-                                color={roomState.players.find(p => p.id === socket.id)?.ready ? 'green' : 'blue'}
+                                color={roomState.players.find(p => p.id === ablyClient.auth.clientId)?.ready ? 'green' : 'blue'}
                                 onClick={handleReady}
-                                disabled={roomState.players.find(p => p.id === socket.id)?.ready || roomState.players.length < 2}
+                                disabled={roomState.players.find(p => p.id === ablyClient.auth.clientId)?.ready || roomState.players.length < 2}
                                 className="w-full max-w-md"
                             >
-                                {roomState.players.find(p => p.id === socket.id)?.ready ? 'READY' : 'MARK AS READY'}
+                                {roomState.players.find(p => p.id === ablyClient.auth.clientId)?.ready ? 'READY' : 'MARK AS READY'}
                             </NeonButton>
                         )}
 
                         {countdown === null && (
                             <button onClick={() => {
-                                socket.disconnect();
+                                ablyClient.connection.close();
                                 setLobbyView('menu');
                                 setRoomState(null);
-                                socket.connect();
+                                ablyClient.connection.connect();
                             }} className="mt-6 text-gray-500 hover:text-white text-sm uppercase tracking-widest transition-colors font-mono">
                                 [ Leave Room ]
                             </button>

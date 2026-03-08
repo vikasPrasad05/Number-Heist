@@ -18,14 +18,16 @@ export default function GlassCard({
     glow = 'none',
     hover = true,
 }: GlassCardProps) {
+    // Keep neon-glow- class name for legacy props, but it looks subtle now per globals.css
     const glowClass = glow !== 'none' ? `neon-glow-${glow}` : '';
 
     return (
         <motion.div
             className={`glass-card ${glowClass} ${className}`}
             onClick={onClick}
-            whileHover={hover ? { scale: 1.02, y: -2 } : undefined}
+            whileHover={hover ? { scale: 1.01, y: -4 } : undefined}
             whileTap={onClick ? { scale: 0.98 } : undefined}
+            transition={{ type: "spring", stiffness: 400, damping: 25 }}
             style={{ cursor: onClick ? 'pointer' : 'default' }}
         >
             {children}

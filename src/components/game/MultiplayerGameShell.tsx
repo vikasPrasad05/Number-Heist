@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { socket } from '../../lib/socket';
+import { ablyClient } from '../../lib/ably';
 import { GameMode, Puzzle, MODE_LABELS } from '../../types/game';
 import { generatePuzzle } from '../../engine/puzzleGenerators';
 import SpeedMath from './SpeedMath';
@@ -38,7 +38,8 @@ interface MultiplayerGameShellProps {
     onExit: () => void;
 }
 
-export default function MultiplayerGameShell({ roomState, playerName, onExit }: MultiplayerGameShellProps) {
+export default function MultiplayerGameShell({ roomState: initialRoomState, playerName, onExit }: MultiplayerGameShellProps) {
+    const [roomState, setRoomState] = useState<RoomState>(initialRoomState);
     const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
     const [roundWinner, setRoundWinner] = useState<string | null>(null);
     const [isLocked, setIsLocked] = useState(false);
@@ -47,92 +48,231 @@ export default function MultiplayerGameShell({ roomState, playerName, onExit }: 
     const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
     const [suddenDeath, setSuddenDeath] = useState(false);
 
-    const isHost = roomState.players.find(p => p.id === socket.id)?.isHost;
-    const opponent = roomState.players.find(p => p.id !== socket.id);
-    const me = roomState.players.find(p => p.id === socket.id);
+    const clientId = ablyClient.auth.clientId;
+    const me = roomState.players.find(p => p.id === clientId);
+    const opponent = roomState.players.find(p => p.id !== clientId);
+    const isHost = me?.isHost;
+
+    const roomChannel = ablyClient.channels.get(`room:${roomState.id}`);
+
+    // Sync roomState from Host broadcasts
+    useEffect(() => {
+        const onRoomStateUpdate = (msg: any) => {
+            if (!isHost) {
+                setRoomState(msg.data);
+            }
+        };
+        roomChannel.subscribe('room_state_update', onRoomStateUpdate);
+        return () => { roomChannel.unsubscribe('room_state_update', onRoomStateUpdate); };
+    }, [isHost, roomChannel]);
 
     useEffect(() => {
         // Initial puzzle generation if we are already in the 'playing' state
         if (roomState.status === 'playing' && isHost && !puzzle) {
             const newPuzzle = generatePuzzle(roomState.mode, roomState.round);
-            socket.emit('sync_puzzle', { roomCode: roomState.id, puzzle: newPuzzle });
+            roomChannel.publish('sync_puzzle', { roomCode: roomState.id, puzzle: newPuzzle });
         }
-    }, [roomState.status, isHost, puzzle, roomState.mode, roomState.round, roomState.id]);
+    }, [roomState.status, isHost, puzzle, roomState.mode, roomState.round, roomState.id, roomChannel]);
 
     useEffect(() => {
-        socket.on('puzzle_sync', (syncedPuzzle: Puzzle) => {
-            setPuzzle(syncedPuzzle);
+        const onPuzzleSync = (msg: any) => {
+            setPuzzle(msg.data);
             setIsLocked(false);
             setRoundWinner(null);
             setFeedback(null);
-        });
+        };
 
-        socket.on('round_end', ({ winnerName }) => {
-            setRoundWinner(winnerName);
+        const onRoundEnd = (msg: any) => {
+            setRoundWinner(msg.data.winnerName);
             setIsLocked(true);
-        });
+        };
 
-        socket.on('round_start', ({ round }) => {
+        const onRoundStart = (msg: any) => {
             setRoundWinner(null);
             setPuzzle(null);
             if (isHost) {
                 // Determine difficulty level mapping from round
-                const level = Math.ceil(round / 2) || 1;
+                const level = Math.ceil(msg.data.round / 2) || 1;
                 const newPuzzle = generatePuzzle(roomState.mode, level);
-                socket.emit('sync_puzzle', { roomCode: roomState.id, puzzle: newPuzzle });
+                roomChannel.publish('sync_puzzle', { roomCode: roomState.id, puzzle: newPuzzle });
             }
-        });
+        };
 
-        socket.on('player_wrong', ({ id }) => {
-            if (id === socket.id) {
+        const onPlayerWrong = (msg: any) => {
+            if (msg.data.id === clientId) {
                 setFeedback('wrong');
                 setTimeout(() => setFeedback(null), 1000);
             }
-        });
+        };
 
-        socket.on('game_over', () => {
+        const onGameOver = () => {
             setIsGameOver(true);
-        });
+        };
 
-        socket.on('opponent_disconnected', () => {
+        const onOpponentDisconnected = () => {
             setOpponentDisconnected(true);
             setIsGameOver(true);
-        });
+        };
 
-        socket.on('sudden_death', () => {
+        const onSuddenDeath = () => {
             setSuddenDeath(true);
             setTimeout(() => setSuddenDeath(false), 3000);
-        });
+        };
+
+        roomChannel.subscribe('puzzle_sync', onPuzzleSync);
+        roomChannel.subscribe('round_end', onRoundEnd);
+        roomChannel.subscribe('round_start', onRoundStart);
+        roomChannel.subscribe('player_wrong', onPlayerWrong);
+        roomChannel.subscribe('game_over', onGameOver);
+        roomChannel.subscribe('opponent_disconnected', onOpponentDisconnected);
+        roomChannel.subscribe('sudden_death', onSuddenDeath);
 
         return () => {
-            socket.off('puzzle_sync');
-            socket.off('round_end');
-            socket.off('round_start');
-            socket.off('player_wrong');
-            socket.off('game_over');
-            socket.off('opponent_disconnected');
-            socket.off('sudden_death');
+            roomChannel.unsubscribe('puzzle_sync', onPuzzleSync);
+            roomChannel.unsubscribe('round_end', onRoundEnd);
+            roomChannel.unsubscribe('round_start', onRoundStart);
+            roomChannel.unsubscribe('player_wrong', onPlayerWrong);
+            roomChannel.unsubscribe('game_over', onGameOver);
+            roomChannel.unsubscribe('opponent_disconnected', onOpponentDisconnected);
+            roomChannel.unsubscribe('sudden_death', onSuddenDeath);
         };
-    }, [isHost, roomState.id, roomState.mode]);
+    }, [isHost, roomState.id, roomState.mode, roomChannel, clientId]);
+
+    // Host Logic: Process answers
+    useEffect(() => {
+        if (!isHost) return;
+
+        const onSubmitAnswer = (message: any) => {
+            const { clientId: senderId } = message;
+            const { correct, points } = message.data;
+
+            if (roomState.status !== 'playing') return;
+
+            if (correct) {
+                const updatedPlayers = roomState.players.map(p =>
+                    p.id === senderId ? { ...p, score: p.score + points } : p
+                );
+                const winner = updatedPlayers.find(p => p.id === senderId);
+
+                const endState = { ...roomState, players: updatedPlayers, status: 'round_end' };
+                setRoomState(endState);
+                roomChannel.publish('room_state_update', endState);
+                roomChannel.publish('round_end', { winnerName: winner?.name || 'Someone' });
+
+                setTimeout(() => {
+                    let nextRound = roomState.round + 1;
+                    let maxRounds = roomState.maxRounds;
+
+                    // Check for game over or sudden death
+                    if (nextRound > maxRounds) {
+                        const pArr = updatedPlayers;
+                        if (pArr.length === 2 && pArr[0].score === pArr[1].score) {
+                            // Tie -> Sudden Death
+                            maxRounds++;
+                            roomChannel.publish('sudden_death');
+                        } else {
+                            const finalState = { ...endState, status: 'results' };
+                            setRoomState(finalState);
+                            roomChannel.publish('room_state_update', finalState);
+                            roomChannel.publish('game_over');
+                            return;
+                        }
+                    }
+
+                    const nextState = { ...endState, status: 'playing', round: nextRound, maxRounds };
+                    setRoomState(nextState);
+                    roomChannel.publish('room_state_update', nextState);
+                    roomChannel.publish('round_start', { round: nextRound });
+                }, 3000);
+            } else {
+                roomChannel.publish('player_wrong', { id: senderId });
+            }
+        };
+
+        const onRematchRequest = (message: any) => {
+            const { clientId: senderId } = message;
+            if (roomState.status !== 'results') return;
+
+            const updatedPlayers = roomState.players.map(p =>
+                p.id === senderId ? { ...p, ready: true } : p
+            );
+
+            const newState = { ...roomState, players: updatedPlayers };
+            setRoomState(newState);
+            roomChannel.publish('room_state_update', newState);
+
+            if (updatedPlayers.length === 2 && updatedPlayers.every(p => p.ready)) {
+                // Reset for rematch
+                const resetState = {
+                    ...newState,
+                    status: 'countdown',
+                    round: 0,
+                    maxRounds: 5,
+                    players: updatedPlayers.map(p => ({ ...p, score: 0, ready: true }))
+                };
+                setRoomState(resetState);
+                roomChannel.publish('room_state_update', resetState);
+
+                roomChannel.publish('start_countdown', 3);
+                setTimeout(() => roomChannel.publish('start_countdown', 2), 1000);
+                setTimeout(() => roomChannel.publish('start_countdown', 1), 2000);
+                setTimeout(() => {
+                    const playState = { ...resetState, status: 'playing', round: 1 };
+                    setRoomState(playState);
+                    roomChannel.publish('room_state_update', playState);
+                    roomChannel.publish('round_start', { round: 1 });
+                }, 3000);
+            }
+        };
+
+        roomChannel.subscribe('submit_answer', onSubmitAnswer);
+        roomChannel.subscribe('rematch', onRematchRequest);
+
+        return () => {
+            roomChannel.unsubscribe('submit_answer', onSubmitAnswer);
+            roomChannel.unsubscribe('rematch', onRematchRequest);
+        };
+    }, [isHost, roomState, roomChannel]);
+
+    // Handle Disconnects (Host logic)
+    useEffect(() => {
+        if (!isHost) return;
+
+        const onPresenceLeave = (member: any) => {
+            const disconnectedPlayer = roomState.players.find(p => p.id === member.clientId);
+            if (disconnectedPlayer) {
+                const updatedPlayers = roomState.players.filter(p => p.id !== member.clientId);
+                if (roomState.status !== 'lobby' && roomState.status !== 'results') {
+                    const endState = { ...roomState, players: updatedPlayers, status: 'results' };
+                    setRoomState(endState);
+                    roomChannel.publish('room_state_update', endState);
+                    roomChannel.publish('opponent_disconnected');
+                } else {
+                    const newState = { ...roomState, players: updatedPlayers };
+                    setRoomState(newState);
+                    roomChannel.publish('room_state_update', newState);
+                }
+            }
+        };
+
+        roomChannel.presence.subscribe('leave', onPresenceLeave);
+        return () => { roomChannel.presence.unsubscribe('leave', onPresenceLeave); };
+    }, [isHost, roomState, roomChannel]);
 
     const handleAnswer = useCallback((correct: boolean) => {
         if (isLocked) return;
 
         if (correct) {
             setFeedback('correct');
-            // Calculate points: base + time bonus. For simplicity here, flat points per round.
-            // Remember pattern levels up natively, so let's just use round * 100 for now
             const points = roomState.round * 100;
-            socket.emit('submit_answer', { roomCode: roomState.id, correct: true, points });
+            roomChannel.publish('submit_answer', { correct: true, points });
             setIsLocked(true);
         } else {
-            socket.emit('submit_answer', { roomCode: roomState.id, correct: false, points: 0 });
-            // Lock out slightly or just let them try again?
-            // "Number Heist" single player proceeds on wrong. For multiplayer, maybe they are locked out for 1s.
+            roomChannel.publish('submit_answer', { correct: false, points: 0 });
             setIsLocked(true);
             setTimeout(() => setIsLocked(false), 1000);
         }
-    }, [isLocked, roomState.id, roomState.round]);
+    }, [isLocked, roomState.round, roomChannel]);
 
     if (isGameOver) {
         const myScore = me?.score || 0;
@@ -188,7 +328,7 @@ export default function MultiplayerGameShell({ roomState, playerName, onExit }: 
 
                     <div className="flex flex-col gap-4 max-w-xs mx-auto mt-8">
                         <NeonButton
-                            onClick={() => socket.emit('rematch', { roomCode: roomState.id })}
+                            onClick={() => roomChannel.publish('rematch', { roomCode: roomState.id })}
                             color="green"
                             disabled={myReadyForRematch}
                             className="w-full"
