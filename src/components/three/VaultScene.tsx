@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect, useMemo, Suspense } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { RoundedBox, Environment, Float, Text, ContactShadows, MeshDistortMaterial } from '@react-three/drei';
+import { RoundedBox, Environment, Float, Text, ContactShadows } from '@react-three/drei';
 import * as THREE from 'three';
 
 function FaceText({ position, rotation }: { position: [number, number, number]; rotation: [number, number, number] }) {
@@ -36,21 +36,16 @@ function HolographicCube() {
     const ringRef1 = useRef<THREE.Mesh>(null);
     const ringRef2 = useRef<THREE.Mesh>(null);
 
-    const timer = useMemo(() => new THREE.Timer(), []);
+    useFrame((state) => {
+        const t = state.clock.elapsedTime;
 
-    useFrame(() => {
-        timer.update();
-        const t = timer.getElapsed();
         if (cubeRef.current) {
             cubeRef.current.rotation.y = t * 0.15;
             cubeRef.current.rotation.x = Math.sin(t * 0.2) * 0.1;
         }
-        if (ringRef1.current) {
-            ringRef1.current.rotation.z = t * 0.4;
-        }
-        if (ringRef2.current) {
-            ringRef2.current.rotation.z = -t * 0.3;
-        }
+
+        if (ringRef1.current) ringRef1.current.rotation.z = t * 0.4;
+        if (ringRef2.current) ringRef2.current.rotation.z = -t * 0.3;
     });
 
     const faceData = useMemo(() => [
@@ -65,7 +60,6 @@ function HolographicCube() {
     return (
         <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
             <group ref={cubeRef}>
-                {/* Main Cube Body */}
                 <RoundedBox args={[1, 1, 1]} radius={0.08} smoothness={4}>
                     <meshPhysicalMaterial
                         color="#0a1628"
@@ -78,25 +72,27 @@ function HolographicCube() {
                     />
                 </RoundedBox>
 
-                {/* Internal Glow */}
                 <mesh scale={0.4}>
                     <boxGeometry />
-                    <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={2} transparent opacity={0.4} />
+                    <meshStandardMaterial
+                        color="#00d4ff"
+                        emissive="#00d4ff"
+                        emissiveIntensity={2}
+                        transparent
+                        opacity={0.4}
+                    />
                 </mesh>
 
-                {/* Face Numbers */}
                 {faceData.map((face, i) => (
                     <FaceText key={i} position={face.pos as any} rotation={face.rot as any} />
                 ))}
 
-                {/* Glow Wireframe */}
                 <mesh scale={1.02}>
                     <boxGeometry />
                     <meshStandardMaterial wireframe color="#00ff88" transparent opacity={0.1} />
                 </mesh>
             </group>
 
-            {/* Orbiting Rings (Outside the rotating group) */}
             <mesh ref={ringRef1} rotation={[Math.PI / 3, 0, 0]}>
                 <torusGeometry args={[1.3, 0.02, 16, 100]} />
                 <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={2} />
@@ -111,10 +107,9 @@ function HolographicCube() {
 }
 
 function SceneCleanup() {
-    const { scene, gl } = useThree();
+    const { scene } = useThree();
 
     useEffect(() => {
-        // Optimize textures on mount
         scene.traverse((child) => {
             if (child instanceof THREE.Mesh && child.material) {
                 const mat = child.material as THREE.MeshStandardMaterial;
@@ -125,12 +120,12 @@ function SceneCleanup() {
             }
         });
 
-        // Cleanup on unmount
         return () => {
             scene.traverse((child) => {
                 const mesh = child as THREE.Mesh;
                 if (mesh.isMesh) {
                     if (mesh.geometry) mesh.geometry.dispose();
+
                     if (mesh.material) {
                         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
                         mats.forEach((m: any) => {
@@ -140,44 +135,23 @@ function SceneCleanup() {
                     }
                 }
             });
-            gl.dispose();
         };
-    }, [scene, gl]);
+    }, [scene]);
 
     return null;
 }
 
 export default function VaultScene() {
-    const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-
     return (
         <div className="w-full h-[350px] md:h-[450px] relative pointer-events-none">
             <Canvas
                 shadows
                 camera={{ position: [0, 0, 4], fov: 40 }}
                 style={{ background: 'transparent' }}
-                gl={(props: any) => {
-                    const canvas = props.canvas || props;
-                    if (!rendererRef.current) {
-                        const renderer = new THREE.WebGLRenderer({
-                            canvas: canvas as HTMLCanvasElement,
-                            antialias: true,
-                            powerPreference: "high-performance",
-                            alpha: true // Must be true for styling background transparent
-                        });
-
-                        renderer.domElement.addEventListener('webglcontextlost', (e) => {
-                            e.preventDefault();
-                            console.warn('WebGL context lost');
-                        }, false);
-
-                        renderer.domElement.addEventListener('webglcontextrestored', () => {
-                            console.warn('WebGL context restored');
-                        }, false);
-
-                        rendererRef.current = renderer;
-                    }
-                    return rendererRef.current;
+                gl={{
+                    antialias: true,
+                    powerPreference: "high-performance",
+                    alpha: true
                 }}
             >
                 <ambientLight intensity={0.5} />
@@ -196,6 +170,7 @@ export default function VaultScene() {
                     blur={2}
                     color="#000000"
                 />
+
                 <SceneCleanup />
             </Canvas>
         </div>
