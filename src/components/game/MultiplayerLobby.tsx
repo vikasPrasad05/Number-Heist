@@ -101,10 +101,14 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
         const onRoomStateUpdate = (msg: any) => {
             // Only non-hosts update their state from the host's broadcast
             if (!isHost) {
-                setRoomState(msg.data);
+                const parsed = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
+                setRoomState(parsed);
             }
         };
-        const onStartCountdown = (msg: any) => setCountdown(msg.data);
+        const onStartCountdown = (msg: any) => {
+            const parsed = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
+            setCountdown(parsed);
+        };
         const onRoundStart = () => { if (roomState) onGameStart(roomState); };
 
         roomChannel.subscribe('room_state_update', onRoomStateUpdate);
@@ -134,7 +138,7 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
                 };
 
                 setRoomState(newState);
-                roomChannel.publish({ name: 'room_state_update', data: newState });
+                roomChannel.publish({ name: 'room_state_update', data: JSON.stringify(newState) });
             } catch (err) {
                 console.error('Update presence error:', err);
             }
@@ -225,11 +229,11 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
 
         if (isHost) {
             setRoomState(newState);
-            roomChannel.publish({ name: 'room_state_update', data: newState });
+            roomChannel.publish({ name: 'room_state_update', data: JSON.stringify(newState) });
             checkAllReady(newState);
         } else {
             // Just publish our ready state for the host to handle
-            roomChannel.publish({ name: 'player_ready', data: { clientId } });
+            roomChannel.publish({ name: 'player_ready', data: JSON.stringify({ clientId }) });
         }
     };
 
@@ -241,13 +245,14 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
 
         const roomChannel = ablyClient.channels.get(`room:${roomState.id}`);
         const onOtherReady = (msg: any) => {
-            const pid = msg.data.clientId;
+            const parsed = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
+            const pid = parsed.clientId;
             const updatedPlayers = roomState.players.map(p =>
                 p.id === pid ? { ...p, ready: true } : p
             );
             const newState = { ...roomState, players: updatedPlayers };
             setRoomState(newState);
-            roomChannel.publish({ name: 'room_state_update', data: newState });
+            roomChannel.publish({ name: 'room_state_update', data: JSON.stringify(newState) });
             checkAllReady(newState);
         };
 
@@ -261,17 +266,17 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
 
             const updatedState = { ...state, status: 'countdown' };
             setRoomState(updatedState);
-            roomChannel.publish({ name: 'room_state_update', data: updatedState });
+            roomChannel.publish({ name: 'room_state_update', data: JSON.stringify(updatedState) });
 
             // Start countdown
-            roomChannel.publish({ name: 'start_countdown', data: 3 });
-            setTimeout(() => roomChannel.publish({ name: 'start_countdown', data: 2 }), 1000);
-            setTimeout(() => roomChannel.publish({ name: 'start_countdown', data: 1 }), 2000);
+            roomChannel.publish({ name: 'start_countdown', data: JSON.stringify(3) });
+            setTimeout(() => roomChannel.publish({ name: 'start_countdown', data: JSON.stringify(2) }), 1000);
+            setTimeout(() => roomChannel.publish({ name: 'start_countdown', data: JSON.stringify(1) }), 2000);
             setTimeout(() => {
                 const playingState = { ...updatedState, status: 'playing', round: 1 };
                 setRoomState(playingState);
-                roomChannel.publish({ name: 'room_state_update', data: playingState });
-                roomChannel.publish({ name: 'round_start', data: { round: 1 } });
+                roomChannel.publish({ name: 'room_state_update', data: JSON.stringify(playingState) });
+                roomChannel.publish({ name: 'round_start', data: JSON.stringify({ round: 1 }) });
             }, 3000);
         }
     };

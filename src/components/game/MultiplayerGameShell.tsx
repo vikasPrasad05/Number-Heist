@@ -59,7 +59,8 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
     useEffect(() => {
         const onRoomStateUpdate = (msg: any) => {
             if (!isHost) {
-                setRoomState(msg.data);
+                const parsed = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
+                setRoomState(parsed);
             }
         };
         roomChannel.subscribe('room_state_update', onRoomStateUpdate);
@@ -70,20 +71,22 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
         // Initial puzzle generation if we are already in the 'playing' state
         if (roomState.status === 'playing' && isHost && !puzzle) {
             const newPuzzle = generatePuzzle(roomState.mode, roomState.round);
-            roomChannel.publish({ name: 'sync_puzzle', data: { roomCode: roomState.id, puzzle: newPuzzle } });
+            roomChannel.publish({ name: 'sync_puzzle', data: JSON.stringify({ roomCode: roomState.id, puzzle: newPuzzle }) });
         }
     }, [roomState.status, isHost, puzzle, roomState.mode, roomState.round, roomState.id, roomChannel]);
 
     useEffect(() => {
         const onPuzzleSync = (msg: any) => {
-            setPuzzle(msg.data);
+            const parsed = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
+            setPuzzle(parsed);
             setIsLocked(false);
             setRoundWinner(null);
             setFeedback(null);
         };
 
         const onRoundEnd = (msg: any) => {
-            setRoundWinner(msg.data.winnerName);
+            const parsed = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
+            setRoundWinner(parsed.winnerName);
             setIsLocked(true);
         };
 
@@ -91,15 +94,17 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
             setRoundWinner(null);
             setPuzzle(null);
             if (isHost) {
+                const parsed = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
                 // Determine difficulty level mapping from round
-                const level = Math.ceil(msg.data.round / 2) || 1;
+                const level = Math.ceil(parsed.round / 2) || 1;
                 const newPuzzle = generatePuzzle(roomState.mode, level);
-                roomChannel.publish({ name: 'sync_puzzle', data: { roomCode: roomState.id, puzzle: newPuzzle } });
+                roomChannel.publish({ name: 'sync_puzzle', data: JSON.stringify({ roomCode: roomState.id, puzzle: newPuzzle }) });
             }
         };
 
         const onPlayerWrong = (msg: any) => {
-            if (msg.data.id === clientId) {
+            const parsed = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
+            if (parsed.id === clientId) {
                 setFeedback('wrong');
                 setTimeout(() => setFeedback(null), 1000);
             }
@@ -119,7 +124,7 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
             setTimeout(() => setSuddenDeath(false), 3000);
         };
 
-        roomChannel.subscribe('puzzle_sync', onPuzzleSync);
+        roomChannel.subscribe('sync_puzzle', onPuzzleSync);
         roomChannel.subscribe('round_end', onRoundEnd);
         roomChannel.subscribe('round_start', onRoundStart);
         roomChannel.subscribe('player_wrong', onPlayerWrong);
@@ -128,7 +133,7 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
         roomChannel.subscribe('sudden_death', onSuddenDeath);
 
         return () => {
-            roomChannel.unsubscribe('puzzle_sync', onPuzzleSync);
+            roomChannel.unsubscribe('sync_puzzle', onPuzzleSync);
             roomChannel.unsubscribe('round_end', onRoundEnd);
             roomChannel.unsubscribe('round_start', onRoundStart);
             roomChannel.unsubscribe('player_wrong', onPlayerWrong);
@@ -144,7 +149,8 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
 
         const onSubmitAnswer = (message: any) => {
             const { clientId: senderId } = message;
-            const { correct, points } = message.data;
+            const parsed = typeof message.data === 'string' ? JSON.parse(message.data) : message.data;
+            const { correct, points } = parsed;
 
             if (roomState.status !== 'playing') return;
 
@@ -156,8 +162,8 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
 
                 const endState = { ...roomState, players: updatedPlayers, status: 'round_end' };
                 setRoomState(endState);
-                roomChannel.publish({ name: 'room_state_update', data: endState });
-                roomChannel.publish({ name: 'round_end', data: { winnerName: winner?.name || 'Someone' } });
+                roomChannel.publish({ name: 'room_state_update', data: JSON.stringify(endState) });
+                roomChannel.publish({ name: 'round_end', data: JSON.stringify({ winnerName: winner?.name || 'Someone' }) });
 
                 setTimeout(() => {
                     let nextRound = roomState.round + 1;
@@ -173,7 +179,7 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
                         } else {
                             const finalState = { ...endState, status: 'results' };
                             setRoomState(finalState);
-                            roomChannel.publish('room_state_update', finalState);
+                            roomChannel.publish({ name: 'room_state_update', data: JSON.stringify(finalState) });
                             roomChannel.publish({ name: 'game_over' });
                             return;
                         }
@@ -181,11 +187,11 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
 
                     const nextState = { ...endState, status: 'playing', round: nextRound, maxRounds };
                     setRoomState(nextState);
-                    roomChannel.publish({ name: 'room_state_update', data: nextState });
-                    roomChannel.publish({ name: 'round_start', data: { round: nextRound } });
+                    roomChannel.publish({ name: 'room_state_update', data: JSON.stringify(nextState) });
+                    roomChannel.publish({ name: 'round_start', data: JSON.stringify({ round: nextRound }) });
                 }, 3000);
             } else {
-                roomChannel.publish({ name: 'player_wrong', data: { id: senderId } });
+                roomChannel.publish({ name: 'player_wrong', data: JSON.stringify({ id: senderId }) });
             }
         };
 
@@ -199,7 +205,7 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
 
             const newState = { ...roomState, players: updatedPlayers };
             setRoomState(newState);
-            roomChannel.publish({ name: 'room_state_update', data: newState });
+            roomChannel.publish({ name: 'room_state_update', data: JSON.stringify(newState) });
 
             if (updatedPlayers.length === 2 && updatedPlayers.every(p => p.ready)) {
                 // Reset for rematch
@@ -211,16 +217,16 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
                     players: updatedPlayers.map(p => ({ ...p, score: 0, ready: true }))
                 };
                 setRoomState(resetState);
-                roomChannel.publish({ name: 'room_state_update', data: resetState });
+                roomChannel.publish({ name: 'room_state_update', data: JSON.stringify(resetState) });
 
-                roomChannel.publish({ name: 'start_countdown', data: 3 });
-                setTimeout(() => roomChannel.publish({ name: 'start_countdown', data: 2 }), 1000);
-                setTimeout(() => roomChannel.publish({ name: 'start_countdown', data: 1 }), 2000);
+                roomChannel.publish({ name: 'start_countdown', data: JSON.stringify(3) });
+                setTimeout(() => roomChannel.publish({ name: 'start_countdown', data: JSON.stringify(2) }), 1000);
+                setTimeout(() => roomChannel.publish({ name: 'start_countdown', data: JSON.stringify(1) }), 2000);
                 setTimeout(() => {
                     const playState = { ...resetState, status: 'playing', round: 1 };
                     setRoomState(playState);
-                    roomChannel.publish({ name: 'room_state_update', data: playState });
-                    roomChannel.publish({ name: 'round_start', data: { round: 1 } });
+                    roomChannel.publish({ name: 'room_state_update', data: JSON.stringify(playState) });
+                    roomChannel.publish({ name: 'round_start', data: JSON.stringify({ round: 1 }) });
                 }, 3000);
             }
         };
@@ -245,12 +251,12 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
                 if (roomState.status !== 'lobby' && roomState.status !== 'results') {
                     const endState = { ...roomState, players: updatedPlayers, status: 'results' };
                     setRoomState(endState);
-                    roomChannel.publish({ name: 'room_state_update', data: endState });
+                    roomChannel.publish({ name: 'room_state_update', data: JSON.stringify(endState) });
                     roomChannel.publish({ name: 'opponent_disconnected' });
                 } else {
                     const newState = { ...roomState, players: updatedPlayers };
                     setRoomState(newState);
-                    roomChannel.publish({ name: 'room_state_update', data: newState });
+                    roomChannel.publish({ name: 'room_state_update', data: JSON.stringify(newState) });
                 }
             }
         };
@@ -265,10 +271,10 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
         if (correct) {
             setFeedback('correct');
             const points = roomState.round * 100;
-            roomChannel.publish({ name: 'submit_answer', data: { correct: true, points } });
+            roomChannel.publish({ name: 'submit_answer', data: JSON.stringify({ correct: true, points }) });
             setIsLocked(true);
         } else {
-            roomChannel.publish({ name: 'submit_answer', data: { correct: false, points: 0 } });
+            roomChannel.publish({ name: 'submit_answer', data: JSON.stringify({ correct: false, points: 0 }) });
             setIsLocked(true);
             setTimeout(() => setIsLocked(false), 1000);
         }
@@ -328,7 +334,7 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
 
                     <div className="flex flex-col gap-4 max-w-xs mx-auto mt-8">
                         <NeonButton
-                            onClick={() => roomChannel.publish({ name: 'rematch', data: { roomCode: roomState.id } })}
+                            onClick={() => roomChannel.publish({ name: 'rematch', data: JSON.stringify({ roomCode: roomState.id }) })}
                             color="green"
                             disabled={myReadyForRematch}
                             className="w-full"
