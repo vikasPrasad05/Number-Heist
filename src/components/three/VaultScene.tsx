@@ -36,8 +36,11 @@ function HolographicCube() {
     const ringRef1 = useRef<THREE.Mesh>(null);
     const ringRef2 = useRef<THREE.Mesh>(null);
 
-    useFrame((state) => {
-        const t = state.clock.elapsedTime;
+    const timer = useMemo(() => new THREE.Timer(), []);
+
+    useFrame(() => {
+        timer.update();
+        const t = timer.getElapsed();
         if (cubeRef.current) {
             cubeRef.current.rotation.y = t * 0.15;
             cubeRef.current.rotation.x = Math.sin(t * 0.2) * 0.1;
@@ -114,6 +117,29 @@ export default function VaultScene() {
                 shadows
                 camera={{ position: [0, 0, 4], fov: 40 }}
                 style={{ background: 'transparent' }}
+                onCreated={({ gl, scene }) => {
+                    // WebGL context handlers
+                    const canvas = gl.domElement;
+                    canvas.addEventListener('webglcontextlost', (e) => {
+                        e.preventDefault();
+                        console.warn('WebGL Context Lost - paused rendering');
+                    }, false);
+                    canvas.addEventListener('webglcontextrestored', () => {
+                        console.log('WebGL Context Restored - resuming rendering');
+                    }, false);
+
+                    // Optimize textures
+                    scene.traverse((child) => {
+                        if (child instanceof THREE.Mesh && child.material) {
+                            const mat = child.material as THREE.MeshStandardMaterial;
+                            if (mat.map) {
+                                mat.map.flipY = false;
+                                mat.map.premultiplyAlpha = false;
+                            }
+                        }
+                    });
+
+                }}
             >
                 <ambientLight intensity={0.5} />
                 <pointLight position={[5, 5, 5]} intensity={1} color="#00d4ff" />

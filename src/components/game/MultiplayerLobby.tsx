@@ -155,10 +155,23 @@ export default function MultiplayerLobby({ playerName, onGameStart, onSoloMode, 
             }
         };
 
+        const onConnectionStateChange = (stateChange: any) => {
+            if (stateChange.current === 'disconnected' || stateChange.current === 'suspended' || stateChange.current === 'failed') {
+                setErrorMsg('Connection lost. Reconnecting...');
+            } else if (stateChange.current === 'connected' && stateChange.previous !== 'initialized') {
+                setErrorMsg('');
+                // Upon reconnect, we should re-enter presence
+                roomChannel.presence.enter({ name: playerName, isHost }).catch(err => console.error('Re-enter presence error:', err));
+            }
+        };
+
+        ablyClient.connection.on(onConnectionStateChange);
+
         roomChannel.presence.subscribe('enter', onPresenceJoin);
         roomChannel.presence.subscribe('leave', onPresenceLeave);
 
         return () => {
+            ablyClient.connection.off(onConnectionStateChange);
             roomChannel.unsubscribe('room_state_update', onRoomStateUpdate);
             roomChannel.unsubscribe('start_countdown', onStartCountdown);
             roomChannel.unsubscribe('round_start', onRoundStart);

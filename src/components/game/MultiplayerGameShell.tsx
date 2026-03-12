@@ -47,6 +47,7 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
     const [opponentDisconnected, setOpponentDisconnected] = useState(false);
     const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
     const [suddenDeath, setSuddenDeath] = useState(false);
+    const [connectionStatus, setConnectionStatus] = useState<'connected' | 'reconnecting'>('connected');
 
     const clientId = ablyClient.auth.clientId;
     const me = roomState.players.find(p => p.id === clientId);
@@ -55,7 +56,7 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
 
     const roomChannel = ablyClient.channels.get(`room:${roomState.id}`);
 
-    // Sync roomState from Host broadcasts
+    // Sync roomState from Host broadcasts and handle connection drops
     useEffect(() => {
         const onRoomStateUpdate = (msg: any) => {
             if (!isHost) {
@@ -63,9 +64,25 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
                 setRoomState(parsed);
             }
         };
+
+        const onConnectionStateChange = (stateChange: any) => {
+            if (stateChange.current === 'disconnected' || stateChange.current === 'suspended' || stateChange.current === 'failed') {
+                setConnectionStatus('reconnecting');
+            } else if (stateChange.current === 'connected' && stateChange.previous !== 'initialized') {
+                setConnectionStatus('connected');
+                // Re-enter presence just in case we were dropped
+                roomChannel.presence.enter({ name: playerName, isHost }).catch(console.error);
+            }
+        };
+
+        ablyClient.connection.on(onConnectionStateChange);
         roomChannel.subscribe('room_state_update', onRoomStateUpdate);
-        return () => { roomChannel.unsubscribe('room_state_update', onRoomStateUpdate); };
-    }, [isHost, roomChannel]);
+
+        return () => { 
+            ablyClient.connection.off(onConnectionStateChange);
+            roomChannel.unsubscribe('room_state_update', onRoomStateUpdate); 
+        };
+    }, [isHost, roomChannel, playerName]);
 
     useEffect(() => {
         // Initial puzzle generation if we are already in the 'playing' state
@@ -417,6 +434,21 @@ export default function MultiplayerGameShell({ roomState: initialRoomState, play
             </div>
 
             {/* Overlays */}
+            <AnimatePresence>
+                {connectionStatus === 'reconnecting' && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-none"
+                    >
+                        <div className="bg-red-500/20 text-red-500 border border-red-500/50 px-6 py-4 rounded-xl text-center font-bold tracking-widest uppercase">
+                            Connection Lost. Reconnecting...
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             <AnimatePresence>
                 {roundWinner && (
                     <motion.div
