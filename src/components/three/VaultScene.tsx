@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useEffect, useMemo, Suspense } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { RoundedBox, Environment, Float, Text, ContactShadows, MeshDistortMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 
@@ -110,35 +110,74 @@ function HolographicCube() {
     );
 }
 
+function SceneCleanup() {
+    const { scene, gl } = useThree();
+
+    useEffect(() => {
+        // Optimize textures on mount
+        scene.traverse((child) => {
+            if (child instanceof THREE.Mesh && child.material) {
+                const mat = child.material as THREE.MeshStandardMaterial;
+                if (mat.map) {
+                    mat.map.flipY = false;
+                    mat.map.premultiplyAlpha = false;
+                }
+            }
+        });
+
+        // Cleanup on unmount
+        return () => {
+            scene.traverse((child) => {
+                const mesh = child as THREE.Mesh;
+                if (mesh.isMesh) {
+                    if (mesh.geometry) mesh.geometry.dispose();
+                    if (mesh.material) {
+                        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+                        mats.forEach((m: any) => {
+                            if (m.map) m.map.dispose();
+                            if (m.dispose) m.dispose();
+                        });
+                    }
+                }
+            });
+            gl.dispose();
+        };
+    }, [scene, gl]);
+
+    return null;
+}
+
 export default function VaultScene() {
+    const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+
     return (
         <div className="w-full h-[350px] md:h-[450px] relative pointer-events-none">
             <Canvas
                 shadows
                 camera={{ position: [0, 0, 4], fov: 40 }}
                 style={{ background: 'transparent' }}
-                onCreated={({ gl, scene }) => {
-                    // WebGL context handlers
-                    const canvas = gl.domElement;
-                    canvas.addEventListener('webglcontextlost', (e) => {
-                        e.preventDefault();
-                        console.warn('WebGL Context Lost - paused rendering');
-                    }, false);
-                    canvas.addEventListener('webglcontextrestored', () => {
-                        console.log('WebGL Context Restored - resuming rendering');
-                    }, false);
+                gl={(props: any) => {
+                    const canvas = props.canvas || props;
+                    if (!rendererRef.current) {
+                        const renderer = new THREE.WebGLRenderer({
+                            canvas: canvas as HTMLCanvasElement,
+                            antialias: true,
+                            powerPreference: "high-performance",
+                            alpha: true // Must be true for styling background transparent
+                        });
 
-                    // Optimize textures
-                    scene.traverse((child) => {
-                        if (child instanceof THREE.Mesh && child.material) {
-                            const mat = child.material as THREE.MeshStandardMaterial;
-                            if (mat.map) {
-                                mat.map.flipY = false;
-                                mat.map.premultiplyAlpha = false;
-                            }
-                        }
-                    });
+                        renderer.domElement.addEventListener('webglcontextlost', (e) => {
+                            e.preventDefault();
+                            console.warn('WebGL context lost');
+                        }, false);
 
+                        renderer.domElement.addEventListener('webglcontextrestored', () => {
+                            console.warn('WebGL context restored');
+                        }, false);
+
+                        rendererRef.current = renderer;
+                    }
+                    return rendererRef.current;
                 }}
             >
                 <ambientLight intensity={0.5} />
@@ -157,6 +196,7 @@ export default function VaultScene() {
                     blur={2}
                     color="#000000"
                 />
+                <SceneCleanup />
             </Canvas>
         </div>
     );
